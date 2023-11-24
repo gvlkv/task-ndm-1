@@ -23,6 +23,11 @@ static int help(const char *exe_name) {
   return 0;
 }
 
+struct ndm_hdr {
+  struct nlmsghdr nl_hdr;
+  struct ifinfomsg info_hdr;
+};
+
 static int bridge_add(const char *name) {
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
   if (fd < 0) {
@@ -59,22 +64,18 @@ static int bridge_add(const char *name) {
       nla_len + sizeof(struct nlmsghdr) + sizeof(struct ifinfomsg);
 
   uint8_t buff_iov[512] = {};
-  struct nlmsghdr nl_header = {
-      .nlmsg_len = message_len,
-      .nlmsg_type = RTM_NEWLINK,
-      .nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE,
-      .nlmsg_seq = (uint32_t)time(NULL),
-  };
-  struct ifinfomsg info = {
-      .ifi_family = AF_UNSPEC,
-      .ifi_type = ARPHRD_NETROM,
-  };
-  memcpy(buff_iov, &nl_header, sizeof(nl_header));           // TODO size
-  memcpy(buff_iov + sizeof(nl_header), &info, sizeof(info)); // TODO size
-  memcpy(buff_iov + sizeof(nl_header) + sizeof(info), buff_nla,
-         nla_len); // TODO size
-
-  struct iovec iov = {.iov_base = buff_iov, .iov_len = nl_header.nlmsg_len};
+  memcpy(buff_iov,
+         &(struct ndm_hdr){
+             .nl_hdr.nlmsg_len = message_len,
+             .nl_hdr.nlmsg_type = RTM_NEWLINK,
+             .nl_hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE,
+             .nl_hdr.nlmsg_seq = (uint32_t)time(NULL),
+             .info_hdr.ifi_family = AF_UNSPEC,
+             .info_hdr.ifi_type = ARPHRD_NETROM,
+         },
+         sizeof(struct ndm_hdr));
+  memcpy(buff_iov + sizeof(struct ndm_hdr), buff_nla, nla_len); // TODO size
+  struct iovec iov = {.iov_base = buff_iov, .iov_len = message_len};
   struct msghdr mh = {
       .msg_name = &sa,
       .msg_namelen = sizeof(sa),
