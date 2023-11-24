@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <time.h>
@@ -26,6 +27,13 @@ struct ndm_hdr {
   struct nlmsghdr nl_hdr;
   struct ifinfomsg info_hdr;
 };
+
+static void check_iface_name(const char *name, const char *type) {
+  if (strlen(name) >= IF_NAMESIZE) {
+    fprintf(stderr, "%s name too long (>=%d).\n", type, IF_NAMESIZE);
+    exit(-1);
+  }
+}
 
 static int bridge_add(const char *name) {
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
@@ -185,17 +193,31 @@ static int bridge_mod_iface(unsigned br_index, unsigned if_index) {
 }
 
 int main(int argc, char **argv) {
+  if (argc < 3)
+    goto help;
+
+  const char *prog = argv[0];
+  const char *command = argv[1];
+
   if (argc == 3) {
-    if (!strcmp(argv[1], "addbr"))
-      return bridge_add(argv[2]);
-    if (!strcmp(argv[1], "delbr"))
-      return bridge_del(argv[2]);
+    const char *name = argv[2];
+    check_iface_name(name, "Bridge");
+    if (!strcmp(command, "addbr"))
+      return bridge_add(name);
+    if (!strcmp(command, "delbr"))
+      return bridge_del(name);
   }
   if (argc == 4) {
-    if (!strcmp(argv[1], "addif"))
-      return bridge_add_iface(argv[2], argv[3]);
-    if (!strcmp(argv[1], "delif"))
-      return bridge_del_iface(argv[3]);
+    const char *name = argv[2];
+    const char *ifname = argv[3];
+    check_iface_name(name, "Bridge");
+    check_iface_name(ifname, "Interface");
+    if (!strcmp(command, "addif"))
+      return bridge_add_iface(name, ifname);
+    if (!strcmp(command, "delif"))
+      return bridge_del_iface(ifname);
   }
-  return help(argv[0]);
+
+help:
+  return help(prog);
 }
