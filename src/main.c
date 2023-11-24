@@ -1,14 +1,25 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <net/if.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/cdefs.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+
+#define PR_ERROR(...)                                                          \
+  do {                                                                         \
+    fprintf(stderr, __VA_ARGS__);                                              \
+    exit(-1);                                                                  \
+  } while (0)
+
+enum { buf_size = 512 };
 
 static const char *bridge_type = "bridge";
 static const size_t bridge_type_size = 7;
@@ -30,8 +41,7 @@ struct ndm_hdr {
 
 static void check_iface_name(const char *name, const char *type) {
   if (strlen(name) >= IF_NAMESIZE) {
-    fprintf(stderr, "%s name too long (>=%d).\n", type, IF_NAMESIZE);
-    exit(-1);
+    PR_ERROR("%s name too long (>=%d).\n", type, IF_NAMESIZE);
   }
 }
 
@@ -52,7 +62,7 @@ static int bridge_add(const char *name) {
                                  .nla_type = IFLA_LINKINFO};
   struct nlattr attr_infokind = {.nla_len = NLA_HDRLEN + bridge_type_size,
                                  .nla_type = IFLA_INFO_KIND};
-  uint8_t buff_nla[512] = {};
+  uint8_t buff_nla[buf_size] = {};
   memcpy(buff_nla, &attr_ifname, sizeof(attr_ifname));
   memcpy(buff_nla + NLA_HDRLEN, name, strlen(name) + 1);
   memcpy(buff_nla + NLA_ALIGN(attr_ifname.nla_len), &attr_linkinfo,
@@ -67,7 +77,7 @@ static int bridge_add(const char *name) {
   uint32_t message_len =
       nla_len + sizeof(struct nlmsghdr) + sizeof(struct ifinfomsg);
 
-  uint8_t buff_iov[512] = {};
+  uint8_t buff_iov[buf_size] = {};
   memcpy(buff_iov,
          &(struct ndm_hdr){.nl_hdr.nlmsg_len = message_len,
                            .nl_hdr.nlmsg_type = RTM_NEWLINK,
@@ -105,7 +115,7 @@ static int bridge_del(const char *name) {
                                  .nla_type = IFLA_LINKINFO};
   struct nlattr attr_infokind = {.nla_len = NLA_HDRLEN + bridge_type_size,
                                  .nla_type = IFLA_INFO_KIND};
-  uint8_t buff_nla[512] = {};
+  uint8_t buff_nla[buf_size] = {};
   memcpy(buff_nla, &attr_linkinfo, sizeof(attr_linkinfo));
   memcpy(buff_nla + NLA_HDRLEN, &attr_infokind, sizeof(attr_infokind));
   memcpy(buff_nla + NLA_HDRLEN * 2, bridge_type, bridge_type_size);
@@ -114,7 +124,7 @@ static int bridge_del(const char *name) {
   uint32_t message_len =
       nla_len + sizeof(struct nlmsghdr) + sizeof(struct ifinfomsg);
 
-  uint8_t buff_iov[512] = {};
+  uint8_t buff_iov[buf_size] = {};
   memcpy(buff_iov,
          &(struct ndm_hdr){.nl_hdr.nlmsg_len = message_len,
                            .nl_hdr.nlmsg_type = RTM_DELLINK,
@@ -160,7 +170,7 @@ static int bridge_mod_iface(unsigned br_index, unsigned if_index) {
   };
 
   struct nlattr attr_master = {.nla_len = 8, .nla_type = IFLA_MASTER};
-  uint8_t buff_nla[512] = {};
+  uint8_t buff_nla[buf_size] = {};
   memcpy(buff_nla, &attr_master, sizeof(attr_master));
   memcpy(buff_nla + NLA_HDRLEN, &br_index, 4);
   uint32_t nla_len = NLA_HDRLEN + 4;
@@ -168,7 +178,7 @@ static int bridge_mod_iface(unsigned br_index, unsigned if_index) {
   uint32_t message_len =
       nla_len + sizeof(struct nlmsghdr) + sizeof(struct ifinfomsg);
 
-  uint8_t buff_iov[512] = {};
+  uint8_t buff_iov[buf_size] = {};
   memcpy(buff_iov,
          &(struct ndm_hdr){.nl_hdr.nlmsg_len = message_len,
                            .nl_hdr.nlmsg_type = RTM_NEWLINK,
@@ -192,6 +202,37 @@ static int bridge_mod_iface(unsigned br_index, unsigned if_index) {
   return 0;
 }
 
+static bool iface_exists(const char *name) {
+  struct stat stat_buf;
+  char buf[buf_size];
+  sprintf(buf, "/sys/class/net/%s", name);
+  return (stat(buf, &stat_buf) == 0);
+}
+
+static bool iface_is_bridge(const char *iface_name) {
+  if (!iface_exists(iface_name))
+    return false;
+  struct stat stat_buf;
+  char buf[buf_size];
+  sprintf(buf, "/sys/class/net/%s/bridge", iface_name);
+  return (stat(buf, &stat_buf) == 0);
+}
+
+static bool iface_is_up(const char *name) {
+  if (!iface_exists(name))
+    return false;
+  char buf[buf_size];
+  sprintf(buf, "/sys/class/net/%s/flags", name);
+  FILE *flags_file;
+  flags_file = fopen(buf, "r");
+  if (!flags_file)
+    return false;
+  int flags;
+  fscanf(flags_file, "%x", &flags);
+  fclose(flags_file);
+  return (flags & 1); // up/down flag
+}
+
 int main(int argc, char **argv) {
   if (argc < 3)
     goto help;
@@ -202,10 +243,26 @@ int main(int argc, char **argv) {
   if (argc == 3) {
     const char *name = argv[2];
     check_iface_name(name, "Bridge");
-    if (!strcmp(command, "addbr"))
-      return bridge_add(name);
-    if (!strcmp(command, "delbr"))
-      return bridge_del(name);
+    if (!strcmp(command, "addbr")) {
+      if (iface_exists(name))
+        PR_ERROR("Interface exists.\n");
+      if (bridge_add(name) || !iface_exists(name))
+        PR_ERROR("Error adding bridge.\n");
+      else
+        return 0;
+    }
+    if (!strcmp(command, "delbr")) {
+      if (!iface_exists(name))
+        PR_ERROR("Interface does not exist.\n");
+      if (!iface_is_bridge(name))
+        PR_ERROR("Interface is not bridge.\n");
+      if (iface_is_up(name))
+        PR_ERROR("Interface is up.\n");
+      if (bridge_del(name) || iface_exists(name))
+        PR_ERROR("Error deleting bridge.\n");
+      else
+        return 0;
+    }
   }
   if (argc == 4) {
     const char *name = argv[2];
