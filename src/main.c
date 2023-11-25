@@ -202,20 +202,23 @@ static int bridge_mod_iface(unsigned br_index, unsigned if_index) {
   return 0;
 }
 
-static bool iface_exists(const char *name) {
+static bool file_exists(const char *path) {
   struct stat stat_buf;
+  return (stat(path, &stat_buf) == 0);
+}
+
+static bool iface_exists(const char *name) {
   char buf[buf_size];
   sprintf(buf, "/sys/class/net/%s", name);
-  return (stat(buf, &stat_buf) == 0);
+  return file_exists(buf);
 }
 
 static bool iface_is_bridge(const char *iface_name) {
   if (!iface_exists(iface_name))
     return false;
-  struct stat stat_buf;
   char buf[buf_size];
   sprintf(buf, "/sys/class/net/%s/bridge", iface_name);
-  return (stat(buf, &stat_buf) == 0);
+  return file_exists(buf);
 }
 
 static bool iface_is_up(const char *name) {
@@ -227,10 +230,28 @@ static bool iface_is_up(const char *name) {
   flags_file = fopen(buf, "r");
   if (!flags_file)
     return false;
-  int flags;
+  int flags = 0;
   fscanf(flags_file, "%x", &flags);
   fclose(flags_file);
   return (flags & 1); // up/down flag
+}
+
+static bool iface_is_some_bridge_member(const char *name) {
+  if (!iface_exists(name))
+    return false;
+  char buf[buf_size];
+  sprintf(buf, "/sys/class/net/%s/master/bridge/bridge_id", name);
+  return file_exists(buf);
+}
+
+static bool iface_is_bridge_member(const char *ifname, const char *brname) {
+  if (!iface_exists(ifname))
+    return false;
+  if (!iface_is_bridge(brname))
+    return false;
+  char buf[buf_size];
+  sprintf(buf, "/sys/class/net/%s/lower_%s", brname, ifname);
+  return file_exists(buf);
 }
 
 int main(int argc, char **argv) {
@@ -241,38 +262,61 @@ int main(int argc, char **argv) {
   const char *command = argv[1];
 
   if (argc == 3) {
-    const char *name = argv[2];
-    check_iface_name(name, "Bridge");
+    const char *brname = argv[2];
+    check_iface_name(brname, "Bridge");
+
     if (!strcmp(command, "addbr")) {
-      if (iface_exists(name))
+      if (iface_exists(brname))
         PR_ERROR("Interface exists.\n");
-      if (bridge_add(name) || !iface_exists(name))
+      if (bridge_add(brname) || !iface_exists(brname))
         PR_ERROR("Error adding bridge.\n");
       else
         return 0;
     }
     if (!strcmp(command, "delbr")) {
-      if (!iface_exists(name))
+      if (!iface_exists(brname))
         PR_ERROR("Interface does not exist.\n");
-      if (!iface_is_bridge(name))
-        PR_ERROR("Interface is not bridge.\n");
-      if (iface_is_up(name))
+      if (!iface_is_bridge(brname))
+        PR_ERROR("Interface is not a bridge.\n");
+      if (iface_is_up(brname))
         PR_ERROR("Interface is up.\n");
-      if (bridge_del(name) || iface_exists(name))
+      if (bridge_del(brname) || iface_exists(brname))
         PR_ERROR("Error deleting bridge.\n");
       else
         return 0;
     }
   }
   if (argc == 4) {
-    const char *name = argv[2];
+    const char *brname = argv[2];
     const char *ifname = argv[3];
-    check_iface_name(name, "Bridge");
+    check_iface_name(brname, "Bridge");
     check_iface_name(ifname, "Interface");
-    if (!strcmp(command, "addif"))
-      return bridge_add_iface(name, ifname);
-    if (!strcmp(command, "delif"))
-      return bridge_del_iface(ifname);
+
+    if (!iface_exists(ifname))
+      PR_ERROR("Interface does not exist.\n");
+    if (!iface_is_bridge(brname))
+      PR_ERROR("Bridge does not exist.\n");
+    if (iface_is_bridge(ifname))
+      PR_ERROR("%s is a bridge.\n", ifname);
+
+    if (!strcmp(command, "addif")) {
+      if (iface_is_bridge_member(ifname, brname))
+        PR_ERROR("Interface %s already connected to bridge %s.\n", ifname,
+                 brname);
+      if (iface_is_some_bridge_member(ifname))
+        PR_ERROR("Interface connected to another bridge.\n");
+      if (bridge_add_iface(brname, ifname) ||
+          !iface_is_bridge_member(ifname, brname))
+        PR_ERROR("Error adding interface to bridge.\n");
+      return 0;
+    }
+    if (!strcmp(command, "delif")) {
+      if (!iface_is_bridge_member(ifname, brname))
+        PR_ERROR("Interface %s not connected to bridge %s.\n", ifname, brname);
+      if (bridge_del_iface(ifname) || iface_is_bridge_member(ifname, brname))
+        PR_ERROR("Error deleting interface from bridge.\n");
+      return 0;
+    }
   }
 
 help:
