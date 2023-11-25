@@ -298,14 +298,29 @@ static void dir_for_each_entry(const char *path, dir_callback_t callback) {
   }
 }
 
+static bool print_ifaces_cb_first_line;
+static void print_ifaces_cb(const char *fname) {
+  if (strstr(fname, "lower_") == fname) {
+    if (!print_ifaces_cb_first_line)
+      printf("\n\t\t\t\t\t\t\t");
+    printf("\t%s", fname + 6);
+    print_ifaces_cb_first_line = false;
+  }
+}
+
 static void cmd_show_callback(const char *ifname) {
   if (iface_is_bridge(ifname)) {
     char bridge_id[buf_size] = {};
     bridge_get_id(ifname, bridge_id);
     bool stp = bridge_is_stp_enabled(ifname);
     bool state = iface_is_up(ifname);
-    printf("%s\t\t%s\t%s\t\t%s\t%s\n", ifname, bridge_id, stp ? "yes" : "no",
-           state ? "up" : "down", "todo");
+    printf("%s\t\t%s\t%s\t\t%s", ifname, bridge_id, stp ? "yes" : "no",
+           state ? "up" : "down");
+    char buf[buf_size];
+    sprintf(buf, "/sys/class/net/%s", ifname);
+    print_ifaces_cb_first_line = true;
+    dir_for_each_entry(buf, print_ifaces_cb);
+    printf("\n");
   }
 }
 

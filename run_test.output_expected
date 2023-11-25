@@ -47,3 +47,21 @@ ARGS delif br2 eth0
 Interface eth0 not connected to bridge br2.
 ARGS addif br2 eth0
 ARGS delif br2 eth0
+TEST show
+ARGS show
+br0		8000.000000000000	no		down
+br1		8000.000000000000	no		down
+br2		8000.000000000000	no		down
+bridge name	bridge id		STP enabled	state	interfaces
+ARGS addif br0 eth0
+ARGS addif br0 eth1
+ARGS addif br2 eth2
+ARGS addif br1 eth3
+ARGS addif br1 eth4
+ARGS show
+								eth1
+								eth3
+br0		8000.000000000000	no		down	eth0
+br1		8000.000000000000	no		down	eth4
+br2		8000.000000000000	no		down	eth2
+bridge name	bridge id		STP enabled	state	interfaces

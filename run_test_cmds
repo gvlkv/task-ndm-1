@@ -6,11 +6,20 @@ cleanup() {
   ip link del name br0 type bridge 2> /dev/null
   ip link del name br1 type bridge 2> /dev/null
   ip link del name br2 type bridge 2> /dev/null
+  ip link del eth1 type dummy 2> /dev/null
+  ip link del eth2 type dummy 2> /dev/null
+  ip link del eth3 type dummy 2> /dev/null
+  ip link del eth4 type dummy 2> /dev/null
 }
 
 test() {
   echo ARGS "$@"
   $PROG "$@"
+}
+
+test_show() {
+  echo ARGS "$@"
+  $PROG "$@" | sort | sed 's/8000\............./8000.000000000000/'
 }
 
 cleanup
@@ -58,5 +67,18 @@ test addbr br2
 test delif br2 eth0
 test addif br2 eth0
 test delif br2 eth0
+
+echo TEST show
+test_show show
+ip link add eth1 type dummy 2> /dev/null
+ip link add eth2 type dummy 2> /dev/null
+ip link add eth3 type dummy 2> /dev/null
+ip link add eth4 type dummy 2> /dev/null
+test addif br0 eth0
+test addif br0 eth1
+test addif br2 eth2
+test addif br1 eth3
+test addif br1 eth4
+test_show show
 
 cleanup
