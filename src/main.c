@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <net/if.h>
@@ -44,7 +45,7 @@ static void check_iface_name(const char *name, const char *type) {
   }
 }
 
-static int bridge_add(const char *name) {
+static int cmd_bridge_add(const char *name) {
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
   if (fd < 0) {
     perror("Cannot open netlink socket");
@@ -99,7 +100,7 @@ static int bridge_add(const char *name) {
   return 0;
 }
 
-static int bridge_del(const char *name) {
+static int cmd_bridge_del(const char *name) {
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
   if (fd < 0) {
     perror("Cannot open netlink socket");
@@ -149,11 +150,11 @@ static int bridge_del(const char *name) {
 
 static int bridge_mod_iface(unsigned br_index, unsigned if_index);
 
-static int bridge_add_iface(const char *br_name, const char *if_name) {
+static int cmdbridge_add_iface(const char *br_name, const char *if_name) {
   return bridge_mod_iface(if_nametoindex(br_name), if_nametoindex(if_name));
 }
 
-static int bridge_del_iface(const char *if_name) {
+static int cmd_bridge_del_iface(const char *if_name) {
   return bridge_mod_iface(0, if_nametoindex(if_name));
 };
 
@@ -253,21 +254,73 @@ static bool iface_is_bridge_member(const char *ifname, const char *brname) {
   return file_exists(buf);
 }
 
+static bool bridge_is_stp_enabled(const char *name) {
+  if (!iface_is_bridge(name))
+    return false;
+  char buf[buf_size];
+  sprintf(buf, "/sys/class/net/%s/bridge/stp_state", name);
+  FILE *flags_file;
+  flags_file = fopen(buf, "r");
+  if (!flags_file)
+    return false;
+  int flags = 0;
+  fscanf(flags_file, "%d", &flags);
+  fclose(flags_file);
+  return (flags == 1);
+}
+
+static void bridge_get_id(const char *name, char *out) {
+  if (!iface_is_bridge(name))
+    return;
+  char buf[buf_size];
+  sprintf(buf, "/sys/class/net/%s/bridge/bridge_id", name);
+  FILE *flags_file;
+  flags_file = fopen(buf, "r");
+  if (!flags_file)
+    return;
+  fscanf(flags_file, "%s", out);
+  fclose(flags_file);
+}
+
+static int cmd_show(void) {
+  printf("bridge name\tbridge id\t\tSTP enabled\tinterfaces\tstate\n");
+  DIR *dir;
+  struct dirent *ep;
+  dir = opendir("/sys/class/net");
+  if (dir != NULL) {
+    while ((ep = readdir(dir)) != NULL) {
+      const char *ifname = ep->d_name;
+      if (iface_is_bridge(ifname)) {
+        char bridge_id[buf_size] = {};
+        bridge_get_id(ifname, bridge_id);
+        bool stp = bridge_is_stp_enabled(ifname);
+        bool state = iface_is_up(ifname);
+        printf("%s\t\t%s\t%s\t\t%s\t\t%s\n", ifname, bridge_id,
+               stp ? "yes" : "no", "todo", state ? "up" : "down");
+      }
+    }
+    closedir(dir);
+  } else {
+    PR_ERROR("Couldn't open sysfs directory.\n");
+  }
+  return 0;
+}
+
 int main(int argc, char **argv) {
-  if (argc < 3)
-    goto help;
-
   const char *prog = argv[0];
-  const char *command = argv[1];
 
+  if (argc == 2 && !strcmp(argv[1], "show")) {
+    return cmd_show();
+  }
   if (argc == 3) {
+    const char *command = argv[1];
     const char *brname = argv[2];
     check_iface_name(brname, "Bridge");
 
     if (!strcmp(command, "addbr")) {
       if (iface_exists(brname))
         PR_ERROR("Interface exists.\n");
-      if (bridge_add(brname) || !iface_is_bridge(brname))
+      if (cmd_bridge_add(brname) || !iface_is_bridge(brname))
         PR_ERROR("Error adding bridge.\n");
       else
         return 0;
@@ -279,13 +332,14 @@ int main(int argc, char **argv) {
         PR_ERROR("Interface is not a bridge.\n");
       if (iface_is_up(brname))
         PR_ERROR("Interface is up.\n");
-      if (bridge_del(brname) || iface_exists(brname))
+      if (cmd_bridge_del(brname) || iface_exists(brname))
         PR_ERROR("Error deleting bridge.\n");
       else
         return 0;
     }
   }
   if (argc == 4) {
+    const char *command = argv[1];
     const char *brname = argv[2];
     const char *ifname = argv[3];
     check_iface_name(brname, "Bridge");
@@ -304,7 +358,7 @@ int main(int argc, char **argv) {
                  brname);
       if (iface_is_some_bridge_member(ifname))
         PR_ERROR("Interface connected to another bridge.\n");
-      if (bridge_add_iface(brname, ifname) ||
+      if (cmdbridge_add_iface(brname, ifname) ||
           !iface_is_bridge_member(ifname, brname))
         PR_ERROR("Error adding interface to bridge.\n");
       return 0;
@@ -312,12 +366,12 @@ int main(int argc, char **argv) {
     if (!strcmp(command, "delif")) {
       if (!iface_is_bridge_member(ifname, brname))
         PR_ERROR("Interface %s not connected to bridge %s.\n", ifname, brname);
-      if (bridge_del_iface(ifname) || iface_is_bridge_member(ifname, brname))
+      if (cmd_bridge_del_iface(ifname) ||
+          iface_is_bridge_member(ifname, brname))
         PR_ERROR("Error deleting interface from bridge.\n");
       return 0;
     }
   }
 
-help:
   return help(prog);
 }
