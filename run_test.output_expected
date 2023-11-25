@@ -1,0 +1,49 @@
+TEST length check
+ARGS addbr aaaaaaaaaaaaaaaa
+Bridge name too long (>=16).
+TEST addbr
+ARGS addbr br0
+ARGS addbr br0
+Interface exists.
+ARGS addbr eth0
+Interface exists.
+TEST delbr
+ARGS delbr br0
+ARGS delbr br0
+Interface does not exist.
+ARGS delbr eth0
+Interface is not a bridge.
+ARGS addbr br0
+UP br0
+ARGS delbr br0
+Interface is up.
+DOWN br0
+ARGS delbr br0
+TEST length check
+ARGS addif br00000000000000 eth0
+Bridge name too long (>=16).
+ARGS addif br0 eth00000000000000
+Interface name too long (>=16).
+TEST addif
+ARGS addif br0 eth1
+Interface does not exist.
+ARGS addif br0 eth0
+Bridge does not exist.
+ARGS addbr br0
+ARGS addif br0 br0
+br0 is a bridge.
+ARGS addif br0 eth0
+ARGS addif br0 eth0
+Interface eth0 already connected to bridge br0.
+ARGS delif br0 eth0
+ARGS addbr br1
+ARGS addif br1 eth0
+ARGS addif br0 eth0
+Interface connected to another bridge.
+ARGS delif br1 eth0
+TEST delif
+ARGS addbr br2
+ARGS delif br2 eth0
+Interface eth0 not connected to bridge br2.
+ARGS addif br2 eth0
+ARGS delif br2 eth0

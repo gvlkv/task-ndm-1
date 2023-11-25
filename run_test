@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+
+./run_test_cmds 2>&1 | tee run_test.output
+
+diff run_test.output_expected run_test.output && echo TEST PASSED || echo TEST NOT PASSED

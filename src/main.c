@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/cdefs.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -268,7 +267,7 @@ int main(int argc, char **argv) {
     if (!strcmp(command, "addbr")) {
       if (iface_exists(brname))
         PR_ERROR("Interface exists.\n");
-      if (bridge_add(brname) || !iface_exists(brname))
+      if (bridge_add(brname) || !iface_is_bridge(brname))
         PR_ERROR("Error adding bridge.\n");
       else
         return 0;

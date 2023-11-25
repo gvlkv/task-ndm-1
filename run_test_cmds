@@ -1,0 +1,62 @@
+#!/usr/bin/env sh
+
+PROG=build/task-ndm-1
+
+cleanup() {
+  ip link del name br0 type bridge 2> /dev/null
+  ip link del name br1 type bridge 2> /dev/null
+  ip link del name br2 type bridge 2> /dev/null
+}
+
+test() {
+  echo ARGS "$@"
+  $PROG "$@"
+}
+
+cleanup
+
+echo TEST length check
+test addbr aaaaaaaaaaaaaaaa
+
+echo TEST addbr
+test addbr br0
+test addbr br0
+test addbr eth0
+
+echo TEST delbr
+test delbr br0
+test delbr br0
+test delbr eth0
+test addbr br0
+ip link set dev br0 up 2> /dev/null
+echo UP br0
+test delbr br0
+ip link set dev br0 down 2> /dev/null
+echo DOWN br0
+test delbr br0
+
+echo TEST length check
+test addif br00000000000000 eth0
+test addif br0 eth00000000000000
+
+echo TEST addif
+test addif br0 eth1
+test addif br0 eth0
+test addbr br0
+test addif br0 br0
+test addif br0 eth0
+test addif br0 eth0
+test delif br0 eth0
+test addbr br1
+test addif br1 eth0
+test addif br0 eth0
+test delif br1 eth0
+
+
+echo TEST delif
+test addbr br2
+test delif br2 eth0
+test addif br2 eth0
+test delif br2 eth0
+
+cleanup
