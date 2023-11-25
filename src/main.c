@@ -282,27 +282,36 @@ static void bridge_get_id(const char *name, char *out) {
   fclose(flags_file);
 }
 
-static int cmd_show(void) {
-  printf("bridge name\tbridge id\t\tSTP enabled\tinterfaces\tstate\n");
+typedef void (*dir_callback_t)(const char *fname);
+static void dir_for_each_entry(const char *path, dir_callback_t callback) {
   DIR *dir;
   struct dirent *ep;
-  dir = opendir("/sys/class/net");
+  dir = opendir(path);
   if (dir != NULL) {
     while ((ep = readdir(dir)) != NULL) {
-      const char *ifname = ep->d_name;
-      if (iface_is_bridge(ifname)) {
-        char bridge_id[buf_size] = {};
-        bridge_get_id(ifname, bridge_id);
-        bool stp = bridge_is_stp_enabled(ifname);
-        bool state = iface_is_up(ifname);
-        printf("%s\t\t%s\t%s\t\t%s\t\t%s\n", ifname, bridge_id,
-               stp ? "yes" : "no", "todo", state ? "up" : "down");
-      }
+      const char *fname = ep->d_name;
+      callback(fname);
     }
     closedir(dir);
   } else {
     PR_ERROR("Couldn't open sysfs directory.\n");
   }
+}
+
+static void cmd_show_callback(const char *ifname) {
+  if (iface_is_bridge(ifname)) {
+    char bridge_id[buf_size] = {};
+    bridge_get_id(ifname, bridge_id);
+    bool stp = bridge_is_stp_enabled(ifname);
+    bool state = iface_is_up(ifname);
+    printf("%s\t\t%s\t%s\t\t%s\t%s\n", ifname, bridge_id, stp ? "yes" : "no",
+           state ? "up" : "down", "todo");
+  }
+}
+
+static int cmd_show(void) {
+  printf("bridge name\tbridge id\t\tSTP enabled\tstate\tinterfaces\n");
+  dir_for_each_entry("/sys/class/net", cmd_show_callback);
   return 0;
 }
 
