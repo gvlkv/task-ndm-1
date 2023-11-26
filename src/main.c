@@ -284,17 +284,18 @@ static void bridge_get_id(const char *name, char *out) {
 
 typedef void (*dir_callback_t)(const char *fname);
 static void dir_for_each_entry(const char *path, dir_callback_t callback) {
-  DIR *dir;
-  struct dirent *ep;
-  dir = opendir(path);
-  if (dir != NULL) {
-    while ((ep = readdir(dir)) != NULL) {
-      const char *fname = ep->d_name;
-      callback(fname);
-    }
-    closedir(dir);
-  } else {
+  struct dirent **namelist;
+  int n;
+
+  n = scandir(path, &namelist, NULL, alphasort);
+  if (n < 0)
     PR_ERROR("Couldn't open sysfs directory.\n");
+  else {
+    for (int i = 0; i < n; i++) {
+      callback(namelist[i]->d_name);
+      free(namelist[i]);
+    }
+    free(namelist);
   }
 }
 
@@ -308,7 +309,7 @@ static void print_ifaces_cb(const char *fname) {
   }
 }
 
-static void cmd_show_callback(const char *ifname) {
+static void cmd_show_cb(const char *ifname) {
   if (iface_is_bridge(ifname)) {
     char bridge_id[buf_size] = {};
     bridge_get_id(ifname, bridge_id);
@@ -326,7 +327,7 @@ static void cmd_show_callback(const char *ifname) {
 
 static int cmd_show(void) {
   printf("bridge name\tbridge id\t\tSTP enabled\tstate\tinterfaces\n");
-  dir_for_each_entry("/sys/class/net", cmd_show_callback);
+  dir_for_each_entry("/sys/class/net", cmd_show_cb);
   return 0;
 }
 
