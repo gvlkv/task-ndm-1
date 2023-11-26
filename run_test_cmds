@@ -79,6 +79,10 @@ test addif br0 eth1
 test addif br2 eth2
 test addif br1 eth3
 test addif br1 eth4
+ip link set dev br1 up
+echo UP br1
+brctl stp br0 on
+echo STP br0 on
 test_show show
 
 cleanup

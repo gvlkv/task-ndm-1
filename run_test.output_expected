@@ -58,10 +58,12 @@ ARGS addif br0 eth1
 ARGS addif br2 eth2
 ARGS addif br1 eth3
 ARGS addif br1 eth4
+UP br1
+STP br0 on
 ARGS show
 bridge name	bridge id		STP enabled	state	interfaces
-br0		8000.000000000000	no		down	eth0
+br0		8000.000000000000	yes		down	eth0
 								eth1
-br1		8000.000000000000	no		down	eth3
+br1		8000.000000000000	no		up	eth3
 								eth4
 br2		8000.000000000000	no		down	eth2
